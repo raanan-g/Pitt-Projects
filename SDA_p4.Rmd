@@ -1,0 +1,385 @@
+---
+title: "Spatial Data Analytics: Project 4"
+output: html_notebook
+---
+Raanan Gurewitsch
+April 18, 2019
+```{r}
+# Packages
+library(plyr)
+library(dplyr)
+library(data.table)
+library(rgdal)
+library(spatstat)
+library(GISTools)
+library(maptools)
+library(maps)
+library(spdep)
+library(spgwr)
+```
+Part A: Moran's I and Geary's C
+```{r}
+coun <- readOGR("C:/Users/raana/OneDrive/Desktop/GIS/AlleghenyCounty_Council","AlleghenyCounty_Council")
+muni <- readOGR("C:/Users/raana/OneDrive/Desktop/GIS/AlleghenyCounty_Municipal", "AlleghenyCounty_Municipal")
+```
+```{r}
+plot(muni, main="Allegheny County Municipalities")
+map.scale(x=1415000, y=350000, ratio=FALSE, relwidth=0.13)
+north.arrow(xb=1455000, yb=370000, len=5000, lab="N", col = "red")
+plot(coun, main="Allegheny County Districts")
+map.scale(x=1415000, y=350000, ratio=FALSE, relwidth=0.13)
+north.arrow(xb=1455000, yb=370000, len=5000, lab="N", col = "red")
+```
+```{r}
+# plot the map for Queen's case, council shape file
+plot(coun, main = "Council Queen's Adjacency", col='gray', border='blue')
+xy <- coordinates(coun)
+plot(W_cq, xy, col='red', lwd=2, add=TRUE)
+# plot the map for Rook's case, council shape file
+plot(coun, main = "Council Rook's Adjacency", col='gray', border='blue')
+xy <- coordinates(coun)
+plot(W_cr, xy, col='red', lwd=2, add=TRUE)
+# plot the map for Queen's case, municipal shape file
+plot(muni,main = "Municipal Queen's Adjacency", col='gray', border='blue')
+xy_mun <- coordinates(muni)
+plot(W_mq, xy_mun, col='red', lwd=2, add=TRUE)
+# plot the map for Rook's case, municipal shape file
+plot(muni,main = "Municipal Rook's Adjacency", col='gray', border='blue')
+xy_mun <- coordinates(muni)
+plot(W_mr, xy_mun, col='red', lwd=2, add=TRUE)
+```
+```{r}
+# Create queens and rooks adjacency matrices for both files
+W_cq <- poly2nb(coun)
+W_cr <- poly2nb(coun, queen = FALSE)
+W_mq <- poly2nb(muni)
+W_mr <- poly2nb(muni, queen = FALSE)
+# Transform into spatial weights matrix
+Wm_cq <- nb2mat(W_cq, style='B')
+Wm_cr <- nb2mat(W_cr, style='B')
+Wm_mq <- nb2mat(W_mq, style='B')
+Wm_mr <- nb2mat(W_mr, style='B')
+
+##########################################
+######## Moran's I (Municipal) ###########
+##########################################
+# Get number of observations
+n <- length(muni)
+# Get values for y and ybar
+y <- muni$SHAPE_area
+ybar <- mean(y)
+# Get multiplied pairs from the area values
+dy <- y - ybar
+g <- expand.grid(dy, dy)
+yiyj <- g[,1]*g[,2]
+yi <- rep(dy, each = n)
+yj <- rep(dy)
+yiyj <- yi * yj
+# Make a matrix of the multiplied pairs and then multiply by the  weights in the Rook's and Queen's adjacency matrices
+pm <- matrix(yiyj, ncol = n)
+pmw_rooks <- pm * Wm_mr
+pmw_queens <- pm * Wm_mq
+# Sum the values (Rook's and Queen's) to get full numerator for Moran's I
+spmw_rooks <- sum(pmw_rooks)
+spmw_queens <- sum(pmw_queens)
+# Divide sum by sum of spatial weights
+smw_rooks <- sum(Wm_cr)
+smw_queens <- sum(Wm_cq)
+sw_rooks <- spmw_rooks / smw_rooks
+sw_queens <- spmw_queens / smw_queens
+# Compute inverse variance of y
+vr <- n / sum(dy^2)
+# Compute Moran's I for queen's and rook's
+MI_rooks_m <- vr * sw_rooks
+MI_queens_m <- vr * sw_queens
+
+n <- length(coun)
+# Get values for y and ybar
+y <- coun$SHAPE_area
+ybar <- mean(y)
+# Get multiplied pairs from the area values
+dy <- y - ybar
+g <- expand.grid(dy, dy)
+yiyj <- g[,1]*g[,2]
+yi <- rep(dy, each = n)
+yj <- rep(dy)
+yiyj <- yi * yj
+# Make a matrix of the multiplied pairs and then multiply by the  weights in the Rook's and Queen's adjacency matrices
+pm <- matrix(yiyj, ncol = n)
+pmw_rooks <- pm * Wm_cr
+pmw_queens <- pm * Wm_cq
+# Sum the values (Rook's and Queen's) to get full numerator for Moran's I
+spmw_rooks <- sum(pmw_rooks)
+spmw_queens <- sum(pmw_queens)
+# Divide sum by sum of spatial weights
+smw_rooks <- sum(Wm_cr)
+smw_queens <- sum(Wm_cq)
+sw_rooks <- spmw_rooks / smw_rooks
+sw_queens <- spmw_queens / smw_queens
+# Compute inverse variance of y
+vr <- n / sum(dy^2)
+# Compute Moran's I for queen's and rook's
+MI_rooks_c <- vr * sw_rooks
+MI_queens_c <- vr * sw_queens
+
+
+##############################
+######### Geary's C ##########
+##############################
+
+# Get number of observations
+n <- length(muni)
+# Get values for y and ybar
+y <- muni$SHAPE_area
+ybar <- mean(y)
+
+dy <- y - ybar
+yi <- (rep(dy, each = n)+ybar)
+yj <- (rep(dy)+ybar)
+yiyj <- (yi - yj)^2
+
+# Make a matrix of the multiplied pairs and then multiply by the  weights in the Rook's and Queen's adjacency matrices
+pm <- matrix(yiyj, ncol = n)
+pmw_rooks <- pm * Wm_mr
+pmw_queens <- pm * Wm_mq
+
+# Sum the values (Rook's and Queen's) to get full numerator for Moran's I
+spmw_rooks <- sum(pmw_rooks)
+spmw_queens <- sum(pmw_queens)
+
+# Divide sum by twice the sum of spatial weights
+smw_rooks <- sum(Wm_cr)
+smw_queens <- sum(Wm_cq)
+sw_rooks <- spmw_rooks / (2*smw_rooks)
+sw_queens <- spmw_queens / (2*smw_queens)
+
+# Compute inverse variance of y
+dy <- yi - ybar
+vr <- (n-1) / sum(dy^2)
+
+# Compute Geary's C for both rook's and queen's
+# Compute Moran's I for queen's and rook's
+GCm_rooks <- vr * sw_rooks
+GCm_queens <- vr * sw_queens
+
+# Get number of observations
+n <- length(coun)
+# Get values for y and ybar
+y <- coun$SHAPE_area
+ybar <- mean(y)
+
+dy <- y - ybar
+yi <- (rep(dy, each = n)+ybar)
+yj <- (rep(dy)+ybar)
+yiyj <- (yi - yj)^2
+
+# Make a matrix of the multiplied pairs and then multiply by the  weights in the Rook's and Queen's adjacency matrices
+pm <- matrix(yiyj, ncol = n)
+pmw_rooks <- pm * Wm_cr
+pmw_queens <- pm * Wm_cq
+
+# Sum the values (Rook's and Queen's) to get full numerator for Moran's I
+spmw_rooks <- sum(pmw_rooks)
+spmw_queens <- sum(pmw_queens)
+
+# Divide sum by twice the sum of spatial weights
+smw_rooks <- sum(Wm_cr)
+smw_queens <- sum(Wm_cq)
+sw_rooks <- spmw_rooks / (2*smw_rooks)
+sw_queens <- spmw_queens / (2*smw_queens)
+
+# Compute inverse variance of y
+dy <- yi - ybar
+vr <- (n-1) / sum(dy^2)
+
+# Compute Geary's C for both rook's and queen's
+# Compute Moran's I for queen's and rook's
+GCc_rooks <- vr * sw_rooks
+GCc_queens <- vr * sw_queens
+
+print("County Dataset:")
+print(paste0("Moran's I (Rook's): ", MI_rooks_c))
+print(paste0("Moran's I (Queen's): ",MI_queens_c))
+print(paste0("Geary's C (Rook's): ",GCc_rooks))
+print(paste0("Geary's C (Queen's): ",GCc_queens))
+print("")
+print("Municipal Dataset:")
+print(paste0("Moran's I (Rook's): ",MI_rooks_m))
+print(paste0("Moran's I (Queen's): ",MI_queens_m))
+print(paste0("Geary's C (Rook's): ",GCm_rooks))
+print(paste0("Geary's C (Queen's): ",GCm_queens))
+
+```
+Because our Moran's I statistic for both Rook's and Queen's adjacency is greater than 0, we have indicated that there is a positive autocorrelation in the counties dataset. However, because the Moran's I value is below 0.3, the autocorrelation is not very strong. In Geary's C, a value of 1 indicated no autocorrelation, while values greater than or equal to 0 and less than 1 indicate positive autocorrelation and values greater than 1 indicate a negative autocorrelation. Therefore, we would interpret our results from the Geary's C test the same as with Moran's I to mean that there is positive autocorrelation in the counties dataset. In the municipalities dataset, we see strong positive spatial autocorrelation due to our Moran's I results, which are above 0.3 for both Queen's and Rook's adjacencies. Similarly, we can interpret our Geary's C statistic to indicate a positive autocorrelation.
+
+__________________________________________________________________________________
+Part B: Global G and Geographically Weighted Regression (GWR)
+
+```{r}
+#crime <- readOGR("C:/Users/raana/OneDrive/Desktop/GIS/Crime_PA2002", "Crime_PA2002")
+W_crime <- as.matrix(dist(coordinates(crime), method = "euclidean", upper = TRUE))
+
+plot(crime, main = "Pennsyvlania Counties")
+map.scale( x=-75.06888, y=39.85,ratio=FALSE, relwidth=.1, metric=FALSE) 
+north.arrow(xb=-74.400, yb=40.2, len=0.055, lab="N",col='Red') 
+```
+```{r}
+###########################################
+########### Global G Statistic ############
+###########################################
+# Store attribute values from the crimes column in X
+X <- crime$INDEX01
+n <- length(X)
+# Numerator and denominator will store sum values of wij(d)xixij and xixj
+numr <- 0
+demr <- 0
+
+# Iterate through x values to calculate sum values where i != j
+for (i in 1:67){
+  xi <- X[i]
+  for (j in 1:67){
+    if (i != j){
+      xij <- xi*X[j]
+      wij <- W_crime[i,j]
+      numr <- numr + (xij*wij)
+      demr <- demr + xij
+    }
+  }
+}
+# Calculate gloabal G
+G <- numr/demr
+
+# Calculate z-score
+egw <- 0
+for(i in 1:67){
+  for(j in 1:67){
+    if(i != j){
+      egw <- egw + (W_crime[i,j])
+    }
+  }
+}
+
+
+print(paste0("Global G Statistic: ",G))
+
+```
+The global G statistic helps determine whether a spatial dataset has clusters of high values or low values that contribute most to an overall finding of positive spatial autocorrelation. For the PA counties in the crime dataset a global G value of 2.44455963081884 implies that "cold spots" or clusters of low values are contributing the most to the positive correlation.
+
+GWR
+
+Using GWR, we build a model to predict the number of crimes in Mifflin County given the population, number of precincts in, and the area of the counties nearby. We can fit the model with an ordinary least squares regression procedure:
+
+C = b0 + b1(POP_CRI01) + b2(AG_CRI01) + b3(Area) + e
+
+The results of the GWR show that the Quasi-global R2 is equal to 0.9791978, which accounts for nearly all of the variance in the dataset.
+
+The process of calculating the coefficients for the regression model was extremely difficult. If this is included on the final exam, please explain this process in detail with code examples beforehand. 
+
+
+```{r}
+############################################
+###### Geographic Weighted Regression ######
+############################################
+
+new_crime <- as.data.frame(crime)
+
+locs <- coordinates(crime)
+
+sel1 <- gwr.sel(INDEX01~POP_CRI01+AG_CRI01+Area, data = new_crime, coords=locs)
+
+sel2 <- gwr(INDEX01~POP_CRI01+AG_CRI01+Area, data = new_crime, bandwidth = sel1, hatmatrix=TRUE, coords=locs)
+
+sel2
+```
+
+_________________________________________________________________
+
+Part C: Inverse Distance Weighting and Ordinary Kriging
+
+```{r}
+# Import data
+Sensor <- readOGR("C:/Users/raana/OneDrive/Desktop/GIS/Ozone_Sensor_Locs", "Ozone_Sensor_Locs")
+PACounty <- readOGR("C:/Users/raana/OneDrive/Desktop/GIS/PA_County_Select", "PA_County_Select")
+O3value <- read.delim("C:/Users/raana/OneDrive/Desktop/GIS/Data/Ozone_Value.dat",header= FALSE,sep="|")
+colnames(O3value) <- c("Valid_Date","Valid_Time","AQSID","Sitename","GMI","Parameter","Unit","Value","Source")
+```
+```{r}
+Sensor
+```
+```{r}
+PACounty
+```
+```{r}
+O3value
+```
+In order to calculate distance weights between attribute (O3) values in the dataset, we need to associate ozone value readings (O3value$Value) with specific sensor locations (Sensor$coordinates).
+
+To do this I first try to narrow down the O3value dataset to observations with ID numbers that exist in the Sensors dataset.
+
+```{r}
+# Convert id column in sensor location dataset to integer to match with ozone data
+Sensor$id <- as.integer(Sensor$id)
+# Merge datasets on ID
+Sensor_df <- as.data.frame(Sensor)
+O3_df <- as.data.frame(O3value)
+merged <- merge(Sensor_df, O3_df, by.x="id", by.y="AQSID")
+# Convert merged dataset back to spatial
+coordinates(merged) <- ~long+lat
+
+merged
+```
+```{r}
+W_o3 <- as.matrix(dist(coordinates(merged),method = "euclidean", upper = TRUE))
+W_o3
+```
+This is my attempt to calculate the interpolated values at each centroid location. However, I am stuck on how to get the 5 nearest values.
+
+```{r}
+pacents <- coordinates(PACounty)
+mgcents <- coordinates(merged)
+PA_int <- c()
+
+for (i in 1:len(PACounty$COUNTY)){
+  zz <- 0
+  # get 5 nearest observations in merged
+  px <- pacents[i,1]
+  py <- pacents[i,2]
+  n5 <- c()
+  for (t in 1:length(merged$id)){
+    nx <- mgcents[t,1]
+    ny <- mgcents[t,2]
+    d <- sqrt((px-nx)^2+(py-ny)^2)
+    append(n5, d, after=length(n5))
+    n5 <- sort(n5,decreasing = FALSE)
+    n5 <- n5[1:5]
+  }
+  
+  for (j in 1:5){
+    wij <- (W_o3[i,j])^(-1)
+    zz <- zz + wij*o35n
+  }
+  zi <- zz/5
+  append(PA_int,zi,after = length(PA_int))
+}
+
+centrs
+
+```
+
+No instruction was ever given in class on how to perform an ordinary kriging analysis. This was extremely difficult. Please explain better the process if this will be included on the final exam. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

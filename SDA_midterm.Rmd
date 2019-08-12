@@ -1,0 +1,245 @@
+---
+title: "Spatial Data Analytics - Midterm"
+output: html_notebook
+---
+Raanan Gurewitsch
+March 8, 2019
+
+```{r}
+# Packages
+library(plyr)
+library(dplyr)
+library(data.table)
+library(rgdal)
+library(spatstat)
+
+pacoals <- readOGR(getwd(),"PACoals")
+palocs <- readOGR(getwd(),"PALocs")
+
+```
+
+```{r}
+plot(pacoals)
+```
+
+
+Part A: Random Quadrat Counts
+
+  A 1.1: PACoals Quadrat Sampling
+  
+```{r}
+minx <- min(pacoals$Lat)
+maxx <- max(pacoals$Lat)
+miny <- min(pacoals$Long)
+maxy <- max(pacoals$Long)
+a <- ((maxy-miny)*(maxx-minx))
+
+coals_pp <- ppp(pacoals$Lat,pacoals$Long,c(minx,maxx),c(miny,maxy))
+
+plot(coals_pp, main = "PA Coals Quadrat Counts")
+x<- list()
+i<-0
+# Generate 100 randomly placed quadrats
+while(i < 100) {
+  # Generate random coordinates within study area
+  rX<-runif(1,minx,maxx)
+  rY<-runif(1,miny,maxy)
+  
+  # Make sure the whole square is within the boundaries
+  if(rX+((maxx-minx)/10)<maxx && rY+((maxx-minx)/10) < maxy) {
+    
+    # Generate the square 
+    rect(rX, rY, rX+((maxx-minx)/10), rY+((maxx-minx)/10), border="red")
+    
+    # Represent square as w (window)
+    w<-owin(c(rX,rX+((maxx-minx)/10)),c(rY, rY+((maxx-minx)/10)))
+    
+    # Return list (x) of quadrat counts
+    ok<-inside.owin(coals_pp$x, coals_pp$y, w)
+    m <-  length(which(ok, arr.ind = TRUE))
+    x[[paste0("val1", i)]] <- m
+  
+    i <- i+1
+  }
+}
+```
+```{r}
+# Convert list x to dataframe to generate table of statistics
+df <- ldply(x, data.frame)
+setnames(df, old=c(".id","X..i.."), new=c("id", "num"))
+w2 = table(df$num)
+class(w2)
+t2 = as.data.frame(w2)
+
+# Add columns with desired statistics
+t2$Var1 <-as.numeric(as.character(t2$Var1))
+t2$mu <- with(t2, Var1 - (length(coals_pp)/a))
+t2$mu_squared <-with(t2, mu^2)
+t2$x_to_musq <- with(t2, mu_squared*Freq)
+
+#"No. of events (K)"
+#"No. of quadrats (X)"
+#"K-mu"
+#"(K-mu)2"
+#"X(K-mu)2"
+
+# S2 = the observed variance for PA Coals
+S2_coals <- sum(t2$x_to_musq)/(sum(t2$Freq)-1)
+
+# Calculate VMR
+VMR_coals <- S2_coals/(length(coals_pp)/a)
+
+# Print out table with statistics
+t2
+```
+```{r}
+cat("VMR for PA Coals: ",VMR_coals)
+
+```
+
+
+  
+  A 2.1: PALocs Quadrat Sampling
+```{r}
+# Get the outer limits of the study region
+MinX2 <- min(palocs$Lat)
+MaxX2 <- max(palocs$Lat)
+MinY2 <- min(palocs$Long)
+MaxY2 <- max(palocs$Long)
+
+# Get the length of the bounding box
+X <- MaxX2 - MinX2
+Y <- MaxY2 - MinY2
+
+# Set quadrat size
+QuadratSize <- 1000;
+
+# Get number of quadrat in X and Y directions
+NQx2 <- ceiling(X/QuadratSize)
+NQy2 <- ceiling(Y/QuadratSize)
+
+# Random sampling approach
+i <- 1;
+
+# Matrix has two columns ID and Number of Points
+T2 <- matrix(data=NA, nrow = (NQx2)*(NQy2), ncol=4)
+
+# Matrix with coordinates of each quadrat
+QuadRand2 <- matrix (data=NA, nrow = (NQx2)*(NQy2), ncol=4)
+
+
+while(i <= (NQx2*NQy2)){
+  
+  # Get random coordinates within the study area to create square buffers around
+  CentX <- runif(1, MinX2, MaxX2)
+  CentY <- runif(1, MinY2, MaxY2)
+  
+  # Get number of points in current quadrat
+  K <- nrow(pacoals@data[palocs$coords.x1 < (CentX+(QuadratSize/2)) &
+                           palocs$coords.x1 > (CentX-(QuadratSize/2)) &
+                           palocs$coords.x2 < (CentY+(QuadratSize/2)) &
+                           palocs$coords.x2 > (CentY-(QuadratSize/2)), ])
+  
+  # Store the count in the matrix T
+  T2[i,] <- c(i, K)
+  
+  # Store 4 coordinates of each quadrat in matrix QuadRand
+  QuadRand2[i,] <- c(CentX-(QuadratSize/2), CentY-(QuadratSize/2),
+                    CentX+(QuadratSize/2), CentY+(QuadratSize/2))
+  
+  i <- i+1;
+}
+
+```
+```{r}
+minx <- min(palocs$Lat)
+maxx <- max(palocs$Lat)
+miny <- min(palocs$Long)
+maxy <- max(palocs$Long)
+a <- ((maxy-miny)*(maxx-minx))
+
+locs_pp <- ppp(palocs$Lat,palocs$Long,c(minx,maxx),c(miny,maxy))
+
+plot(locs_pp, main = "PA Locs Quadrat Counts")
+x2<- list()
+i<-0
+# Generate 100 randomly placed quadrats
+while(i < 100) {
+  # Generate random coordinates within study area
+  rX<-runif(1,minx,maxx)
+  rY<-runif(1,miny,maxy)
+  
+  # Make sure the whole square is within the boundaries
+  if(rX+((maxx-minx)/10)<maxx && rY+((maxx-minx)/10) < maxy) {
+    
+    # Generate the square 
+    rect(rX, rY, rX+((maxx-minx)/10), rY+((maxx-minx)/10), border="red")
+    
+    # Represent square as w (window)
+    w<-owin(c(rX,rX+((maxx-minx)/10)),c(rY, rY+((maxx-minx)/10)))
+    
+    # Return list (x) of quadrat counts
+    ok<-inside.owin(coals_pp$x, coals_pp$y, w)
+    m <-  length(which(ok, arr.ind = TRUE))
+    x2[[paste0("val1", i)]] <- m
+  
+    i <- i+1
+  }
+}
+```
+```{r}
+# Convert list x to dataframe to generate table of statistics
+df <- ldply(x2, data.frame)
+setnames(df, old=c(".id","X..i.."), new=c("id", "num"))
+w2 = table(df$num)
+class(w2)
+t1 = as.data.frame(w2)
+
+# Add columns with desired statistics
+t1$Var1 <-as.numeric(as.character(t1$Var1))
+t1$mu <- with(t1, Var1 - (length(locs_pp)/a))
+t1$mu_squared <-with(t1, mu^2)
+t1$x_to_musq <- with(t1, mu_squared*Freq)
+
+#"No. of events (K)"
+#"No. of quadrats (X)"
+#"K-mu"
+#"(K-mu)2"
+#"X(K-mu)2"
+
+# S2 = the observed variance for PA Coals
+S2_locs <- sum(t1$x_to_musq)/(sum(t1$Freq)-1)
+
+# Calculate VMR
+VMR_locs <- S2_coals/(length(locs_pp)/a)
+
+# Print out table with statistics
+t1
+```
+```{r}
+cat("VMR for PA Locs: ",VMR_locs)
+```
+
+In this analysis we have two point patterns, PACoals and PALocs. As seen in the plot of PACoals, the events in the point pattern are highly clustered. This explains why the result of the quadrat counts method was a Variance Mean Ratio of 2707.917. The higher a VMR is over 1, the more clustering is indicated by the quadrat counts method because many of the quadrats have values of zero and many have more than one, causing a higher variance. We see the opposite effect in the PALocs dataset, as the events in this point pattern are more evenly distributed throughout the study region. However, with PALocs the VMR is still very high, despite being more evenly distributed. This demonstrates one of the shortcomings of the random quadrat sampling approach in that the arbitrary size and placement of the quadrats means that not all events will necessarily be accounted for and thus skew the overall analysis.
+
+```{r}
+# Create a point pattern object from data
+coals_pp <- ppp(pacoals$Lat,pacoals$Long,c(MinX,MaxX),c(MinY,MaxY))
+locs_pp <- ppp(palocs$Lat,palocs$Long,c(MinX2,MaxX2),c(MinY2,MaxY2))
+G_coals <- Gest(coals_pp, correction = "none")
+G_locs <- Gest(locs_pp, correction = "none")
+F_coals <- Fest(coals_pp, correction = "none")
+F_locs <- Fest(locs_pp, correction = "none")
+```
+Part B: G and F function
+
+The G-function lets us examine the cumulative frequency distribution of the nearest neighbor distances within a point pattern. More clustered point patterns will have a higher and smoother G curve because the shorter nearest neighbor distances will inevitably be more common among the events, causing the curve to rise rapidly from zero. That is why we see a smooth G curve for PACoals, on which G(0) = ~0.7, compared to the lower and more rugged G curve for PALocs, which is flat until roughly d = 0.2. The F-function is related to the G-function but works by calculating the minimum distance from any point in the pattern to a randomly chosen point in the study region. This means that for point patterns that are very clustered, the F curve is more likely to remain relatively flat like in PA Coals. In more evenly distributed point patterns though, the curve will rise more quickly because most of the events are relatively close to everywhere in the region. 
+
+
+```{r}
+plot(G_coals, main = "PA Coals G Function")
+plot(F_coals, main = "PA Coals F Function")
+plot(G_locs, main = "PA Locs G Function")
+plot(F_locs, main = "PA Locs F Function")
+```
+```

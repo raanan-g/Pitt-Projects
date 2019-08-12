@@ -1,0 +1,345 @@
+---
+title: "INFSCI 2809: Spatial Data Analytics - Final Exam"
+output: html_notebook
+---
+Raanan Gurewitsch
+April 22, 2019
+```{r}
+# Packages
+library(plyr)
+library(dplyr)
+library(data.table)
+library(rgdal)
+library(spatstat)
+library(GISTools)
+library(maptools)
+library(maps)
+library(spdep)
+library(spgwr)
+library(rgeos)
+library(ggplot2)
+library(ape)
+library(phylin)
+library(raster)
+library(data.table) 
+library(mapproj)
+library(PBSmapping)
+library(SDraw)
+library(tmap)
+library(tmaptools)
+library(sf)
+```
+
+```{r}
+
+
+```
+PART A: 
+```{r}
+neigh1 <- readOGR("C:/Users/raana/OneDrive/Desktop/GIS/DataFiles_FinalExam/1_Neighbor1","1_Neighbor1")
+neigh2 <- readOGR("C:/Users/raana/OneDrive/Desktop/GIS/DataFiles_FinalExam/1_Neighbor2","1_Neighbor2")
+```
+Perform autocorrelation on the population attribute (POP_ARR02) in "1_Neighbor1.shp" and "1_Neighbor2.shp" files by using Rook's adjacency and Queen's adjacency.
+```{r}
+# Create queens and rooks adjacency matrices for both files
+Wq1 <- poly2nb(neigh1)
+Wr1 <- poly2nb(neigh1, queen = FALSE)
+
+Wq2 <- poly2nb(neigh2)
+Wr2 <- poly2nb(neigh2, queen = FALSE)
+# Transform into spatial weights matrix
+Wmq1 <- nb2mat(Wq1, style='B')
+Wmr1 <- nb2mat(Wr1, style='B')
+
+Wmq2 <- nb2mat(Wq2, style='B')
+Wmr2 <- nb2mat(Wr2, style='B')
+```
+Use both Moran's I and Geary's C to measure the level, type, significance of correlation in the attribute.
+```{r}
+# Using Rook's adjacency, here we calculate the Moran's I value for both files
+x1 <- neigh1$POP_ARR02
+x2 <- neigh2$POP_ARR02
+moran_r1 <- Moran.I(x1, Wmr1)
+moran_r2 <- Moran.I(x2, Wmr2)
+# Now using Queen's adjacency, here we calculate the Moran's I value for both files
+moran_q1 <- Moran.I(x1, Wmq1)
+moran_q2 <- Moran.I(x2, Wmq2)
+
+print("File 1 Moran's:")
+print("Rook's: ")
+moran_r1
+print("Queen's: ")
+moran_q1
+      
+print("File 2 Moran's:")
+print("Rook's: ")
+moran_r2
+print("Queen's: ")
+moran_q2
+```
+```{r}
+qtm(shp = neigh1, fill = "POP_ARR02", fill.palette = "-Reds", title = "Neighborhood 1") 
+qtm(shp = neigh2, fill = "POP_ARR02", fill.palette = "Blues", ncol = 2, title = "Neighborhood 2")
+```
+```{r}
+# Before performing the Geary's C test, we have to convert the spatial weights matrices into list form
+Wmr1_l <- nb2listw(Wr1)
+Wmr2_l <- nb2listw(Wr2)
+Wmq1_l <- nb2listw(Wq1)
+Wmq2_l <- nb2listw(Wq2)
+# Using Rook's adjacency, here we calculate the Geary's C value for both files
+geary_r1 <- geary.test(x1, Wmr1_l)
+geary_r2 <- geary.test(x2, Wmr2_l)
+# Now using Queen's adjacency, here we calculate the Geary's C value for both files
+geary_q1 <- geary.test(x1, Wmq1_l)
+geary_q2 <- geary.test(x2, Wmq2_l)
+
+print("File 1 Geary's C:")
+print("Rook's: ")
+geary_r1
+print("Queen's: ")
+geary_q1
+      
+print("File 2 Geary's C:")
+print("Rook's: ")
+geary_r2
+print("Queen's: ")
+geary_q2
+```
+
+Part B: 
+Use the Inverse Distance Weighting (IDW) and the Ordinary Kriging (OK) methods to
+interpolate an "Intensity" value at the center location of each polygon in "2_Community.shp" file using the sample "Intensity" values at locations (s_lat, s_long) in the same file. 
+
+For IDW, use different values for r (window size) and different values for k (exponent of distance) to find the most similar map as produced by OK. Use exponential semiveriogram model for OK.
+
+```{r}
+Comm2 <- readOGR("C:/Users/raana/OneDrive/Desktop/GIS/DataFiles_FinalExam/2_Community","2_Community")
+
+# Get Interpolated surface using Ordinary Kriging
+
+# Set up grid system for interpolation
+bbox(Comm2)
+proj4string(Comm2)
+coords_ = coordinates(Comm2)
+grid_ <- data.frame(x=coords_[,1], y=coords_[,2])
+coordinates(grid_) = ~x+y
+
+# Generate exponential semivariogram 
+vgmodel <- variogram(Intensity~1, Comm2)
+vgfit <- fit.variogram(vgmodel, model = vgm(1, "Exp",12,1))
+proj4string(Comm2) = CRS(proj4string(grid_))
+intld <- krige(Intensity~1, Comm2, grid_, model=vgfit)
+
+# Add column with interpolated values
+Comm2$Interpolated <- intld$var1.pred
+
+# Generate map of interpolated surface (OK)
+qtm(Comm2, fill = "Interpolated", fill.palette = "Blues", title = 'Interpolated Values (OK)') +
+tm_scale_bar(size = 0.5) + tm_grid(n.x = 5, n.y = 5) +
+tm_compass(position = c('right', 'top'))
+
+```
+
+```{r}
+# Test 4 different powers for idw interpolation
+test2.idw <- gstat::idw(Intensity~1, Comm2, newdata=grid_,idp=2)
+test4.idw <- gstat::idw(Intensity~1, Comm2, newdata=grid_,idp=4)
+test6.idw <- gstat::idw(Intensity~1, Comm2, newdata=grid_,idp=6)
+test8.idw <- gstat::idw(Intensity~1, Comm2, newdata=grid_,idp=8)
+print(test2.idw$var1.pred)
+print(test4.idw$var1.pred)
+print(test6.idw$var1.pred)
+print(test8.idw$var1.pred)
+
+#[inverse distance weighted interpolation]
+#[inverse distance weighted interpolation]
+#[inverse distance weighted interpolation]
+#[inverse distance weighted interpolation]
+# [1]   8  64  20 150  14   5 200  75  50  18   7 175
+# [1]   8  64  20 150  14   5 200  75  50  18   7 175
+# [1]   8  64  20 150  14   5 200  75  50  18   7 175
+# [1]   8  64  20 150  14   5 200  75  50  18   7 175
+
+# Test shows that each power produces same results
+
+
+```
+
+```{r}
+
+# Add column with interpolated values
+Comm2$Interpolated_IDW <- test2.idw$var1.pred
+
+# Generate map of interpolated surface (OK)
+qtm(Comm2, fill = "Interpolated_IDW", fill.palette = "Blues", title = 'Interpolated Values (IDW)') +
+tm_scale_bar(size = 0.5) + tm_grid(n.x = 5, n.y = 5) +
+tm_compass(position = c('right', 'top'))
+
+
+
+```
+
+```{r}
+# Get interpolated surface using IDW 
+test_idw <- idw(Comm2, coords_, grid_, p = 2, R = 2)
+
+
+# Calculate interpolated values using different powers
+
+for (p_ in 2:8){
+  
+  for (r_ in 2:8){
+    # Generate interpolated surface 
+    test_idw <- idw(Comm2, coords_, grid_, p = i, R = j)
+    
+    
+  }
+  
+  
+}
+
+
+
+
+
+# Calculate interpolated values using different window sizes
+#ipd_p2 <- idw(Comm2, coords_, grid_, p = 2)
+#ipd_p4 <- idw(Comm2, coords_, grid_, p = 4)
+#ipd_p6 <- idw(Comm2, coords_, grid_, p = 6)
+#ipd_p8 <- idw(Comm2, coords_, grid_, p = 8)
+
+
+ipd_p2
+grid.image(ipd_p2, grid_, main="IDW Interpolated Surface",xlab = "Longitude", ylab = "Latitude")
+points(grid_)
+```
+
+```{r}
+Comm2
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+Part C: 
+```{r}
+P1 <- readOGR("C:/Users/raana/OneDrive/Desktop/GIS/DataFiles_FinalExam/3_Area1", "3_Area1")
+P2 <- readOGR("C:/Users/raana/OneDrive/Desktop/GIS/DataFiles_FinalExam/3_Area2", "3_Area2")
+P3 <- readOGR("C:/Users/raana/OneDrive/Desktop/GIS/DataFiles_FinalExam/3_TrailPoints","3_TrailPoints")
+P4 <- readOGR("C:/Users/raana/OneDrive/Desktop/GIS/DataFiles_FinalExam/3_State_Roads","3_State_Roads")
+```
+a. Overlay P2 on P1 and find their intersection (P12), P1/(=P1-P12), and P2/(=P2-P12).
+```{r}
+a1 <- combinePolys(SpatialPolygons2PolySet(P1))
+a2 <- combinePolys(SpatialPolygons2PolySet(P2))
+# Get intersection P12 
+P12 <- combinePolys(joinPolys(a1, a2,"INT"))
+plotPolys(a12, proj = TRUE, col="blue2",xlab="Longitude",ylab="Latitude")
+title("P12")
+# Get P1' by subtracting P1 and P12
+P1_ <- combinePolys(joinPolys(a1, a12,"DIFF"))
+plotPolys(P1_, proj = TRUE, col="darkorange1",xlab="Longitude",ylab="Latitude")
+title("P1'")
+# Get P2' by subtracting P2 and P12
+P2_ <- combinePolys(joinPolys(a2, a12,"DIFF"))
+plotPolys(P2_, proj = TRUE, col="gold2",xlab="Longitude",ylab="Latitude")
+title("P2'")
+```
+b. Overlay P3 on P1, P2, and P12 and find number of points within P1, P2, and P12.
+```{r}
+# For P1:
+plotPolys(a1, proj = TRUE, col=alpha("gold2",0.1),xlab="Longitude",ylab="Latitude")
+title("P3 in P1")
+proj4string(P3) <- proj4string(P1)
+P3P1 <- !is.na(over(P3, as(P1, "SpatialPolygons")))
+points(P3[P3P1, ], pch=16, col="red")
+# For P2:
+plotPolys(a2, proj = TRUE, col=alpha("gold2",0.1),xlab="Longitude",ylab="Latitude")
+title("P3 in P2")
+proj4string(P3) <- proj4string(P2)
+P3P2 <- !is.na(over(P3, as(P2, "SpatialPolygons")))
+points(P3[P3P2, ], pch=16, col="red")
+# For P12:
+plotPolys(a12, proj = TRUE, col=alpha("gold2",0.1),xlab="Longitude",ylab="Latitude")
+title("P3 in P12")
+P12_raster <- raster::intersect(P1, P2)
+#class(P12_raster)
+proj4string(P3) <- proj4string(P12_raster)
+P3P12 <- !is.na(over(P3, as(P12_raster, "SpatialPolygons")))
+points(P3[P3P12, ], pch=16, col="red")
+```
+Results:
+```{r}
+# Count the points in each region
+print(paste0("Total points:",length(P3)))
+print(paste0("      In P1: ",length(P3[P3P1, ])))
+print(paste0("      In P2: ",length(P3[P3P2, ])))
+print(paste0("      In P12: ",length(P3[P3P12, ])))
+```
+c. Overlay P4 on P1, P2, and P12 and find the total length of road segments within P1, P2, and
+P12
+```{r}
+plotPolys(a1, proj = TRUE, col=alpha("gold2",0.1),xlab="Longitude",ylab="Latitude")
+title("P4 in P1")
+proj4string(P4) <- proj4string(P1)
+P4P1 <- !is.na(over(P4, as(P1, "SpatialPolygons")))
+plot(P4[P4P1, ],add=T, col="red")
+
+plotPolys(a2, proj = TRUE, col=alpha("gold2",0.1),xlab="Longitude",ylab="Latitude")
+title("P4 in P2")
+proj4string(P4) <- proj4string(P2)
+P4P2 <- !is.na(over(P4, as(P2, "SpatialPolygons")))
+plot(P4[P4P2, ],add=T, col="red")
+```
+```{r}
+plotPolys(a12, proj = TRUE, col=alpha("gold2",0.1),xlab="Longitude",ylab="Latitude")
+title("P4 in P12")
+proj4string(P4) <- proj4string(P12_raster)
+P4P12 <- !is.na(over(P4, as(P12_raster, "SpatialPolygons")))
+plot(P4[P4P12, ],add=T, col="red")
+
+```
+```{r}
+calcArea (a12, rollup = 1)
+
+print(paste0("Total road segment length: ",sum(P4$SEG_LNGTH_)))
+print(paste0("                   in  P1: ",lineLength(P4[P4P1,],byid=FALSE)))
+print(paste0("                   in  P2: ",lineLength(P4[P4P2,],byid=FALSE)))
+print(paste0("                   in  P12: ",lineLength(P4[P4P12,],byid=FALSE)))
+```
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
