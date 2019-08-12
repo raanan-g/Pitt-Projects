@@ -271,9 +271,7 @@ Using GWR, we build a model to predict the number of crimes in Mifflin County gi
 
 C = b0 + b1(POP_CRI01) + b2(AG_CRI01) + b3(Area) + e
 
-The results of the GWR show that the Quasi-global R2 is equal to 0.9791978, which accounts for nearly all of the variance in the dataset.
-
-The process of calculating the coefficients for the regression model was extremely difficult. If this is included on the final exam, please explain this process in detail with code examples beforehand. 
+The results of the GWR show that the Quasi-global R2 is equal to 0.9791978, which accounts for nearly all of the variance in the dataset. 
 
 
 ```{r}
@@ -366,7 +364,6 @@ centrs
 
 ```
 
-No instruction was ever given in class on how to perform an ordinary kriging analysis. This was extremely difficult. Please explain better the process if this will be included on the final exam. 
 
 
 
